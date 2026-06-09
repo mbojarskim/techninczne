@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Sędzia Techniczny - Konkurencje techniczne</title>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; min-height: 100vh; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: white; padding: 20px; border-radius: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
+        .header h1 { font-size: 1.5rem; }
+        .user-info { display: flex; align-items: center; gap: 15px; }
+        .logout-btn { background: #dc3545; padding: 8px 20px; border-radius: 40px; cursor: pointer; border: none; color: white; font-size: 0.9rem; }
+        .logout-btn:hover { background: #c82333; }
+        .card { background: white; border-radius: 16px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .card h3 { margin-bottom: 15px; color: #1a1a2e; border-left: 4px solid #0f3460; padding-left: 12px; }
+        .form-row { display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end; margin-bottom: 20px; }
+        .form-group { flex: 1; min-width: 180px; }
+        .form-group label { display: block; font-weight: 600; margin-bottom: 5px; color: #333; }
+        .form-group input, .form-group select { width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #ddd; font-size: 1rem; }
+        button { background: #0f3460; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.9rem; margin-right: 8px; margin-top: 8px; }
+        button:hover { background: #1a4a7a; }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        button.success { background: #28a745; }
+        button.success:hover { background: #218838; }
+        button.warning { background: #ffc107; color: #333; }
+        button.info { background: #17a2b8; }
+        .protocol-list { max-height: 300px; overflow-y: auto; margin-bottom: 20px; }
+        .protocol-item { background: #f8f9fa; border-radius: 12px; padding: 12px; margin-bottom: 8px; cursor: pointer; border: 1px solid #e9ecef; }
+        .protocol-item:hover { background: #e9ecef; }
+        .protocol-item.selected { background: #d4edda; border-left: 4px solid #28a745; }
+        .protocol-item.locked { background: #f8d7da; border-left: 4px solid #dc3545; }
+        .protocol-title { font-weight: bold; }
+        .protocol-details { font-size: 0.8rem; color: #666; }
+        .attempts-table { width: 100%; border-collapse: collapse; margin: 15px 0; overflow-x: auto; display: block; }
+        .attempts-table th, .attempts-table td { padding: 8px; text-align: center; border: 1px solid #ddd; }
+        .attempts-table th { background: #0f3460; color: white; }
+        .attempt-input { width: 80px; padding: 6px; text-align: center; border-radius: 6px; border: 1px solid #ccc; }
+        .best-result { font-weight: bold; background: #fff9c4; }
+        .info-note { background: #e7f3ff; border-left: 4px solid #0f3460; padding: 10px; margin: 10px 0; font-size: 0.85rem; }
+        .warning-note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin: 10px 0; font-size: 0.85rem; }
+        .login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); display: flex; justify-content: center; align-items: center; z-index: 10000; }
+        .login-box { background: white; padding: 40px; border-radius: 32px; max-width: 400px; width: 90%; text-align: center; }
+        .login-box input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 40px; border: 1px solid #cbd5e1; }
+        .login-box button { width: 100%; background: #28a745; }
+        .login-error { color: #dc3545; margin-top: 10px; display: none; }
+        .flex-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin: 15px 0; }
+        @media (max-width: 768px) { .attempt-input { width: 55px; } .attempts-table { font-size: 0.75rem; } }
+    </style>
+</head>
+<body>
+<div id="loginOverlay" class="login-overlay">
+    <div class="login-box">
+        <div style="font-size: 48px;">📏</div>
+        <h2>Sędzia Techniczny</h2>
+        <p>Zaloguj się</p>
+        <input type="email" id="loginEmail" placeholder="Email">
+        <input type="password" id="loginPassword" placeholder="Hasło">
+        <button id="loginBtn">Zaloguj</button>
+        <div id="loginError" class="login-error">❌ Nieprawidłowy email lub hasło</div>
+    </div>
+</div>
+
+<div id="mainContent" style="display: none;">
+    <div class="container">
+        <div class="header">
+            <h1>📏 Sędzia Techniczny - Konkurencje techniczne</h1>
+            <div class="user-info"><span id="userEmail"></span><button class="logout-btn" id="logoutBtn">Wyloguj</button></div>
+        </div>
+        <div class="card">
+            <h3>📋 Protokoły techniczne</h3>
+            <button id="refreshListBtn">🔄 Odśwież</button>
+            <button id="newProtocolBtn" class="success">➕ Nowy protokół</button>
+            <div id="protocolsList" class="protocol-list" style="margin-top:15px;"></div>
+        </div>
+        <div id="editorCard" style="display:none;">
+            <div class="card">
+                <h3>✏️ Edycja protokołu</h3>
+                <div id="protocolInfo"></div>
+                <div class="form-row">
+                    <div class="form-group"><label>🏷️ Konkurencja</label><select id="editKonkurencja"></select></div>
+                    <div class="form-group"><label>🏷️ Kategoria</label><select id="editKategoria"></select></div>
+                    <div class="form-group"><label>&nbsp;</label><button id="createFromListBtn" class="info">📋 Utwórz z listy startowej</button></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>🔢 Numer startowy (dodaj ręcznie)</label><input type="text" id="editNrStartowy" placeholder="np. 101"></div>
+                    <div class="form-group"><label>&nbsp;</label><button id="loadZawodnikBtn" class="info">🔍 Pobierz dane</button></div>
+                    <div class="form-group"><label>&nbsp;</label><button id="addZawodnikBtn" class="success">➕ Dodaj zawodnika</button></div>
+                </div>
+                <div id="zawodnikInfo" style="display:none;"></div>
+                <div id="attemptsContainer"></div>
+                <div class="flex-buttons">
+                    <button id="lockProtocolBtn" class="warning">🔒 Zablokuj protokół</button>
+                    <button id="unlockProtocolBtn" class="warning" style="display:none;">🔓 Odblokuj protokół</button>
+                    <button id="saveProtocolBtn" class="success">💾 Zapisz protokół</button>
+                    <button id="closeEditorBtn" class="danger">✖ Zamknij</button>
+                </div>
+            </div>
+        </div>
+        <div id="messages"></div>
+    </div>
+</div>
+
+<script>
+const firebaseConfig = {
+    apiKey: "AIzaSyD2HMHEDyZ6jrUHwjv8wDaxd7swi9rtn2k",
+    authDomain: "zawodylekkoatletyczne.firebaseapp.com",
+    databaseURL: "https://zawodylekkoatletyczne-default-rtdb.firebaseio.com",
+    projectId: "zawodylekkoatletyczne",
+    storageBucket: "zawodylekkoatletyczne.firebasestorage.app",
+    messagingSenderId: "812081786407",
+    appId: "1:812081786407:web:7f820e436490693a9d2802"
+};
+let database, auth, currentUser = null;
+let currentProtocolId = null, currentProtocol = null;
+let zawodnicyData = {};
+let unikalneKonkurencje = [];
+let unikalneKategorie = [];
+
+try {
+    firebase.initializeApp(firebaseConfig);
+    database = firebase.database();
+    auth = firebase.auth();
+    auth.onAuthStateChanged(user => {
+        if (user) {
+            currentUser = user;
+            document.getElementById('loginOverlay').style.display = 'none';
+            document.getElementById('mainContent').style.display = 'block';
+            document.getElementById('userEmail').innerText = user.email;
+            loadAllData();
+            addMessage('✅ Zalogowano', 'success');
+        } else {
+            document.getElementById('mainContent').style.display = 'none';
+            document.getElementById('loginOverlay').style.display = 'flex';
+            currentUser = null;
+        }
+    });
+} catch(e) { console.error(e); }
+
+async function loadAllData() {
+    await loadZawodnicy();
+    await loadMapowanieKonkurencji();
+    await loadKategorie();
+    await loadProtocolsList();
+}
+
+async function loadZawodnicy() {
+    const snap = await database.ref('zawodnicy').once('value');
+    zawodnicyData = snap.val() || {};
+}
+
+async function loadMapowanieKonkurencji() {
+    const snap = await database.ref('mapowanie_konkurencji').once('value');
+    const mapa = snap.val() || {};
+    const konkSet = new Set(Object.values(mapa));
+    unikalneKonkurencje = Array.from(konkSet).sort();
+    const konkurencjaSelect = document.getElementById('editKonkurencja');
+    if (konkurencjaSelect) {
+        konkurencjaSelect.innerHTML = '<option value="">-- Wybierz --</option>' + unikalneKonkurencje.map(k => `<option value="${k}">${k}</option>`).join('');
+    }
+}
+
+async function loadKategorie() {
+    const katSet = new Set();
+    for (const z of Object.values(zawodnicyData)) {
+        const kat = z.pelna_kategoria || z.kategoria_wiekowa;
+        if (kat) katSet.add(kat);
+    }
+    unikalneKategorie = Array.from(katSet).sort();
+    const kategoriaSelect = document.getElementById('editKategoria');
+    if (kategoriaSelect) {
+        kategoriaSelect.innerHTML = '<option value="">-- Wybierz --</option>' + unikalneKategorie.map(k => `<option value="${k}">${k}</option>`).join('');
+    }
+}
+
+function addMessage(msg, type) {
+    const container = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.className = `alert alert-${type}`;
+    div.innerHTML = msg;
+    container.appendChild(div);
+    setTimeout(() => div.remove(), 4000);
+}
+
+async function loadProtocolsList() {
+    const container = document.getElementById('protocolsList');
+    if (!container) return;
+    container.innerHTML = '<div class="loading">⏳ Ładowanie...</div>';
+    const snapshot = await database.ref('protokoly_techniczne').once('value');
+    const data = snapshot.val();
+    if (!data || Object.keys(data).length === 0) {
+        container.innerHTML = '<div>📭 Brak protokołów. Stwórz nowy.</div>';
+        return;
+    }
+    const protocols = Object.entries(data).map(([id, p]) => ({ id, ...p }));
+    protocols.sort((a,b) => (b.data_utworzenia||0) - (a.data_utworzenia||0));
+    let html = '';
+    for (const p of protocols) {
+        const lockedClass = p.zablokowany ? 'locked' : '';
+        html += `<div class="protocol-item ${lockedClass}" data-id="${p.id}">
+            <div class="protocol-title">${p.konkurencja || '?'} - ${p.kategoria || '?'}</div>
+            <div class="protocol-details">Liczba zawodników: ${Object.keys(p.zawodnicy || {}).length} | ${p.zablokowany ? '🔒 Zablokowany' : '🔓 Otwarty'}</div>
+        </div>`;
+    }
+    container.innerHTML = html;
+    document.querySelectorAll('.protocol-item').forEach(el => {
+        el.addEventListener('click', () => {
+            const id = el.getAttribute('data-id');
+            loadProtocolForEdit(id);
+            document.querySelectorAll('.protocol-item').forEach(p => p.classList.remove('selected'));
+            el.classList.add('selected');
+        });
+    });
+}
+
+async function loadProtocolForEdit(id) {
+    const snap = await database.ref(`protokoly_techniczne/${id}`).once('value');
+    const protocol = snap.val();
+    if (!protocol) { addMessage('❌ Protokół nie istnieje', 'error'); return; }
+    currentProtocolId = id;
+    currentProtocol = protocol;
+    if (currentProtocol.zawodnicy) {
+        for (const nr in currentProtocol.zawodnicy) {
+            const z = currentProtocol.zawodnicy[nr];
+            if (!z.wyniki || !Array.isArray(z.wyniki) || z.wyniki.length !== 6) {
+                z.wyniki = ['', '', '', '', '', ''];
+            }
+        }
+    } else {
+        currentProtocol.zawodnicy = {};
+    }
+    document.getElementById('editKonkurencja').value = protocol.konkurencja || '';
+    document.getElementById('editKategoria').value = protocol.kategoria || '';
+    document.getElementById('editNrStartowy').value = '';
+    document.getElementById('zawodnikInfo').style.display = 'none';
+    document.getElementById('protocolInfo').innerHTML = `<div class="info-note"><strong>${protocol.konkurencja || '?'} - ${protocol.kategoria || '?'}</strong> ${protocol.zablokowany ? '🔒 ZABLOKOWANY' : '🔓 OTWARTY'}</div>`;
+    renderAttemptsTable();
+    document.getElementById('editorCard').style.display = 'block';
+    updateLockButtons(protocol.zablokowany);
+}
+
+function updateLockButtons(isLocked) {
+    const lockBtn = document.getElementById('lockProtocolBtn');
+    const unlockBtn = document.getElementById('unlockProtocolBtn');
+    const saveBtn = document.getElementById('saveProtocolBtn');
+    const createBtn = document.getElementById('createFromListBtn');
+    const loadZawBtn = document.getElementById('loadZawodnikBtn');
+    const addZawBtn = document.getElementById('addZawodnikBtn');
+    const editKonk = document.getElementById('editKonkurencja');
+    const editKat = document.getElementById('editKategoria');
+    const editNr = document.getElementById('editNrStartowy');
+
+    if (isLocked) {
+        lockBtn.style.display = 'none';
+        unlockBtn.style.display = 'inline-block';
+        if (saveBtn) saveBtn.disabled = true;
+        if (editKonk) editKonk.disabled = true;
+        if (editKat) editKat.disabled = true;
+        if (editNr) editNr.disabled = true;
+        if (loadZawBtn) loadZawBtn.disabled = true;
+        if (addZawBtn) addZawBtn.disabled = true;
+        if (createBtn) createBtn.disabled = true;
+    } else {
+        lockBtn.style.display = 'inline-block';
+        unlockBtn.style.display = 'none';
+        if (saveBtn) saveBtn.disabled = false;
+        if (editKonk) editKonk.disabled = false;
+        if (editKat) editKat.disabled = false;
+        if (editNr) editNr.disabled = false;
+        if (loadZawBtn) loadZawBtn.disabled = false;
+        if (addZawBtn) addZawBtn.disabled = false;
+        if (createBtn) createBtn.disabled = false;
+    }
+    renderAttemptsTable();
+}
+
+function renderAttemptsTable() {
+    const zawodnicy = currentProtocol.zawodnicy || {};
+    const zawodnikList = Object.values(zawodnicy);
+    if (zawodnikList.length === 0) {
+        document.getElementById('attemptsContainer').innerHTML = '<div class="info-note">Brak zawodników. Dodaj z listy lub ręcznie.</div>';
+        return;
+    }
+    const isLocked = currentProtocol.zablokowany === true;
+    const disabledAttr = isLocked ? 'disabled' : '';
+    let html = `<div style="overflow-x:auto;"><table class="attempts-table"><thead><th>Nr startowy</th><th>Zawodnik</th><th>Kategoria</th><th>PK</th><th>Próba 1</th><th>Próba 2</th><th>Próba 3</th><th>Próba 4</th><th>Próba 5</th><th>Próba 6</th><th>Najlepszy</th></thead><tbody>`;
+    for (const z of zawodnikList) {
+        if (!z.wyniki || !Array.isArray(z.wyniki) || z.wyniki.length !== 6) {
+            z.wyniki = ['', '', '', '', '', ''];
+        }
+        const attempts = z.wyniki;
+        const best = z.najlepszy || '';
+        const isPk = z.pk || false;
+        html += `<tr data-nr="${z.nr_startowy}">
+            <td>${z.nr_startowy}</td>
+            <td>${z.imie} ${z.nazwisko}</td>
+            <td>${z.kategoria || ''}</td>
+            <td><input type="checkbox" class="pk-checkbox" data-nr="${z.nr_startowy}" ${isPk ? 'checked' : ''} ${disabledAttr}></td>`;
+        for (let i = 0; i < 6; i++) {
+            html += `<td><input type="text" class="attempt-input" data-nr="${z.nr_startowy}" data-proba="${i+1}" value="${attempts[i] || ''}" placeholder="wynik/x" style="width:70px;" ${disabledAttr}></td>`;
+        }
+        html += `<td class="best-result" data-nr="${z.nr_startowy}">${best}</td>`;
+        html += `</tr>`;
+    }
+    html += `</tbody></table></div>`;
+    document.getElementById('attemptsContainer').innerHTML = html;
+
+    if (isLocked) return;
+
+    document.querySelectorAll('.attempt-input').forEach(inp => {
+        inp.removeEventListener('change', window._attemptChange);
+        const handler = (e) => {
+            const nr = inp.getAttribute('data-nr');
+            const proba = parseInt(inp.getAttribute('data-proba'));
+            const value = inp.value.trim();
+            const zawodnik = currentProtocol.zawodnicy[nr];
+            if (zawodnik) {
+                if (!zawodnik.wyniki) zawodnik.wyniki = ['','','','','',''];
+                zawodnik.wyniki[proba-1] = (value === 'x') ? 'x' : value;
+                const liczby = zawodnik.wyniki.filter(v => v && v !== 'x' && !isNaN(parseFloat(v))).map(v => parseFloat(v));
+                const best = liczby.length ? Math.max(...liczby) : '';
+                zawodnik.najlepszy = best ? best.toString() : '';
+                const bestCell = document.querySelector(`.best-result[data-nr="${nr}"]`);
+                if (bestCell) bestCell.innerText = zawodnik.najlepszy;
+            }
+        };
+        inp.addEventListener('change', handler);
+        inp._attemptChange = handler;
+    });
+    document.querySelectorAll('.pk-checkbox').forEach(chk => {
+        chk.removeEventListener('change', window._pkChange);
+        const pkHandler = (e) => {
+            const nr = chk.getAttribute('data-nr');
+            const zawodnik = currentProtocol.zawodnicy[nr];
+            if (zawodnik) zawodnik.pk = chk.checked;
+        };
+        chk.addEventListener('change', pkHandler);
+        chk._pkChange = pkHandler;
+    });
+}
+
+document.getElementById('createFromListBtn').addEventListener('click', async () => {
+    if (currentProtocol && currentProtocol.zablokowany) {
+        addMessage('Protokół zablokowany – odblokuj aby zmienić', 'error');
+        return;
+    }
+    const konkurencja = document.getElementById('editKonkurencja').value.trim();
+    const kategoria = document.getElementById('editKategoria').value.trim();
+    if (!konkurencja || !kategoria) {
+        addMessage('Wybierz konkurencję i kategorię', 'warning');
+        return;
+    }
+
+    const pasujacy = [];
+    for (const [id, z] of Object.entries(zawodnicyData)) {
+        if (z.rezygnacja === 'TRUE') continue;
+        const pelnaKat = (z.pelna_kategoria || z.kategoria_wiekowa || '').trim();
+        if (pelnaKat !== kategoria) continue;
+        const konk1 = (z.konkurencja1 || '').trim();
+        const konk2 = (z.konkurencja2 || '').trim();
+        const maKonkurencje = (konk1 === konkurencja || konk2 === konkurencja);
+        if (!maKonkurencje) continue;
+
+        pasujacy.push({
+            nr_startowy: z.nr_startowy || id,
+            imie: z.imie,
+            nazwisko: z.nazwisko,
+            rocznik: z.rocznik,
+            kategoria: pelnaKat,
+            wyniki: ['', '', '', '', '', ''],
+            najlepszy: '',
+            pk: false
+        });
+    }
+    if (pasujacy.length === 0) {
+        addMessage('⚠️ Brak zawodników spełniających kryteria', 'warning');
+        return;
+    }
+
+    if (!currentProtocolId || !currentProtocol) {
+        currentProtocolId = `tech_${Date.now()}`;
+        currentProtocol = {
+            konkurencja: konkurencja,
+            kategoria: kategoria,
+            zawodnicy: {},
+            zablokowany: false,
+            data_utworzenia: Date.now(),
+            utworzono_przez: currentUser.email
+        };
+        await database.ref(`protokoly_techniczne/${currentProtocolId}`).set(currentProtocol);
+        await loadProtocolForEdit(currentProtocolId);
+    } else {
+        if (currentProtocol.konkurencja !== konkurencja || currentProtocol.kategoria !== kategoria) {
+            currentProtocol.konkurencja = konkurencja;
+            currentProtocol.kategoria = kategoria;
+            await database.ref(`protokoly_techniczne/${currentProtocolId}`).update({
+                konkurencja: konkurencja,
+                kategoria: kategoria
+            });
+        }
+    }
+
+    let dodano = 0;
+    for (const z of pasujacy) {
+        if (!currentProtocol.zawodnicy[z.nr_startowy]) {
+            currentProtocol.zawodnicy[z.nr_startowy] = z;
+            dodano++;
+        }
+    }
+    if (dodano > 0) {
+        await database.ref(`protokoly_techniczne/${currentProtocolId}/zawodnicy`).set(currentProtocol.zawodnicy);
+        renderAttemptsTable();
+        addMessage(`✅ Dodano ${dodano} zawodników z listy startowej`, 'success');
+    } else {
+        addMessage(`ℹ️ Wszyscy pasujący (${pasujacy.length}) są już w protokole`, 'info');
+    }
+});
+
+document.getElementById('loadZawodnikBtn').addEventListener('click', async () => {
+    const nr = document.getElementById('editNrStartowy').value.trim();
+    if (!nr) { addMessage('Podaj numer startowy', 'warning'); return; }
+    let zawodnik = null;
+    for (const [id, z] of Object.entries(zawodnicyData)) {
+        if (z.nr_startowy === nr || z.id === nr) { zawodnik = z; break; }
+    }
+    if (!zawodnik) { addMessage('❌ Nie znaleziono zawodnika', 'error'); return; }
+    const pelnaKat = zawodnik.pelna_kategoria || zawodnik.kategoria_wiekowa || '';
+    const konkurencja = document.getElementById('editKonkurencja').value;
+    const kategoria = document.getElementById('editKategoria').value;
+    let warningHtml = '';
+    if (konkurencja && !(zawodnik.konkurencja1 === konkurencja || zawodnik.konkurencja2 === konkurencja)) {
+        warningHtml = `<div class="warning-note">⚠️ Zawodnik nie ma przypisanej konkurencji "${konkurencja}". Możesz dodać jako PK.</div>`;
+    }
+    if (kategoria && pelnaKat !== kategoria) {
+        warningHtml += `<div class="warning-note">⚠️ Zawodnik ma kategorię "${pelnaKat}" (oczekiwana: ${kategoria}). Możesz dodać jako PK.</div>`;
+    }
+    document.getElementById('zawodnikInfo').innerHTML = `<strong>${zawodnik.imie} ${zawodnik.nazwisko}</strong> | Rocznik: ${zawodnik.rocznik || '-'} | Kategoria: ${pelnaKat}<br>${warningHtml}<label><input type="checkbox" id="tempPkCheckbox"> Dodaj jako PK (poza konkurencją)</label>`;
+    document.getElementById('zawodnikInfo').style.display = 'block';
+    window.tempZawodnik = { nr, imie: zawodnik.imie, nazwisko: zawodnik.nazwisko, rocznik: zawodnik.rocznik, kategoria: pelnaKat, pk: false };
+});
+
+document.getElementById('addZawodnikBtn').addEventListener('click', () => {
+    if (currentProtocol.zablokowany) { addMessage('Protokół zablokowany – odblokuj aby dodać', 'error'); return; }
+    const nr = document.getElementById('editNrStartowy').value.trim();
+    if (!nr || !window.tempZawodnik) { addMessage('Najpierw wczytaj zawodnika', 'warning'); return; }
+    if (!currentProtocol.zawodnicy) currentProtocol.zawodnicy = {};
+    if (currentProtocol.zawodnicy[nr]) { addMessage('Zawodnik już istnieje w protokole', 'warning'); return; }
+    const pkCheck = document.getElementById('tempPkCheckbox');
+    const isPk = pkCheck ? pkCheck.checked : false;
+    currentProtocol.zawodnicy[nr] = {
+        nr_startowy: nr,
+        imie: window.tempZawodnik.imie,
+        nazwisko: window.tempZawodnik.nazwisko,
+        rocznik: window.tempZawodnik.rocznik,
+        kategoria: window.tempZawodnik.kategoria,
+        wyniki: ['','','','','',''],
+        najlepszy: '',
+        pk: isPk
+    };
+    renderAttemptsTable();
+    document.getElementById('editNrStartowy').value = '';
+    document.getElementById('zawodnikInfo').style.display = 'none';
+    addMessage(`✅ Dodano zawodnika ${window.tempZawodnik.imie} ${window.tempZawodnik.nazwisko}`, 'success');
+});
+
+document.getElementById('saveProtocolBtn').addEventListener('click', async () => {
+    if (!currentProtocolId) return;
+    if (currentProtocol.zablokowany) {
+        addMessage('Protokół zablokowany – nie można zapisać zmian', 'error');
+        return;
+    }
+    const konkurencja = document.getElementById('editKonkurencja').value;
+    const kategoria = document.getElementById('editKategoria').value;
+    if (!konkurencja || !kategoria) { addMessage('Uzupełnij konkurencję i kategorię', 'warning'); return; }
+    currentProtocol.konkurencja = konkurencja;
+    currentProtocol.kategoria = kategoria;
+    currentProtocol.data_modyfikacji = Date.now();
+    await database.ref(`protokoly_techniczne/${currentProtocolId}`).set(currentProtocol);
+    addMessage('✅ Protokół zapisany', 'success');
+    loadProtocolsList();
+});
+
+document.getElementById('lockProtocolBtn').addEventListener('click', async () => {
+    if (!currentProtocolId) return;
+    currentProtocol.zablokowany = true;
+    await database.ref(`protokoly_techniczne/${currentProtocolId}`).update({ zablokowany: true });
+    updateLockButtons(true);
+    addMessage('🔒 Protokół zablokowany', 'success');
+    loadProtocolsList();
+});
+document.getElementById('unlockProtocolBtn').addEventListener('click', async () => {
+    if (!currentProtocolId) return;
+    currentProtocol.zablokowany = false;
+    await database.ref(`protokoly_techniczne/${currentProtocolId}`).update({ zablokowany: false });
+    updateLockButtons(false);
+    addMessage('🔓 Protokół odblokowany', 'success');
+    loadProtocolsList();
+});
+document.getElementById('closeEditorBtn').addEventListener('click', () => {
+    document.getElementById('editorCard').style.display = 'none';
+    currentProtocolId = null;
+    currentProtocol = null;
+});
+document.getElementById('newProtocolBtn').addEventListener('click', async () => {
+    const newId = `tech_${Date.now()}`;
+    const newProtocol = {
+        konkurencja: '',
+        kategoria: '',
+        zawodnicy: {},
+        zablokowany: false,
+        data_utworzenia: Date.now(),
+        utworzono_przez: currentUser.email
+    };
+    await database.ref(`protokoly_techniczne/${newId}`).set(newProtocol);
+    addMessage('✅ Nowy protokół utworzony', 'success');
+    loadProtocolsList();
+    loadProtocolForEdit(newId);
+});
+document.getElementById('refreshListBtn').addEventListener('click', () => { loadProtocolsList(); loadKategorie(); });
+document.getElementById('loginBtn').addEventListener('click', () => {
+    const email = document.getElementById('loginEmail').value.trim();
+    const pass = document.getElementById('loginPassword').value;
+    auth.signInWithEmailAndPassword(email, pass).catch(() => {
+        document.getElementById('loginError').style.display = 'block';
+    });
+});
+document.getElementById('logoutBtn').addEventListener('click', () => auth.signOut());
+</script>
+</body>
+</html>
