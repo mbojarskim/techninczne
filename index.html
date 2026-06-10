@@ -521,7 +521,12 @@ document.getElementById('newProtocolBtn').addEventListener('click', async () => 
     loadProtocolsList();
     loadProtocolForEdit(newId);
 });
-document.getElementById('refreshListBtn').addEventListener('click', () => { loadProtocolsList(); loadKategorie(); });
+document.getElementById('refreshListBtn').addEventListener('click', async () => {
+    await loadZawodnicy();          // odświeżenie danych zawodników (rezygnacje, zmiany)
+    await loadProtocolsList();      // odświeżenie listy protokołów
+    await loadKategorie();          // odświeżenie dostępnych kategorii
+    addMessage('✅ Odświeżono listę protokołów, kategorie oraz dane zawodników', 'success');
+});
 document.getElementById('loginBtn').addEventListener('click', () => {
     const email = document.getElementById('loginEmail').value.trim();
     const pass = document.getElementById('loginPassword').value;
