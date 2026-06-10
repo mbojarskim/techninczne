@@ -97,6 +97,7 @@
                 <div class="flex-buttons">
                     <button id="lockProtocolBtn" class="warning">🔒 Zablokuj protokół</button>
                     <button id="unlockProtocolBtn" class="warning" style="display:none;">🔓 Odblokuj protokół</button>
+					<button id="endCompetitionBtn" class="danger">🏁 Zakończ konkurencję (cała kategoria)</button>
                     <button id="saveProtocolBtn" class="success">💾 Zapisz protokół</button>
                     <button id="closeEditorBtn" class="danger">✖ Zamknij</button>
                 </div>
@@ -188,7 +189,7 @@ function addMessage(msg, type) {
 }
 
 async function loadProtocolsList() {
-    const container = document.getElementById('protocolsList');
+	const container = document.getElementById('protocolsList');
     if (!container) return;
     container.innerHTML = '<div class="loading">⏳ Ładowanie...</div>';
     const snapshot = await database.ref('protokoly_techniczne').once('value');
@@ -202,10 +203,13 @@ async function loadProtocolsList() {
     let html = '';
     for (const p of protocols) {
         const lockedClass = p.zablokowany ? 'locked' : '';
-        html += `<div class="protocol-item ${lockedClass}" data-id="${p.id}">
-            <div class="protocol-title">${p.konkurencja || '?'} - ${p.kategoria || '?'}</div>
-            <div class="protocol-details">Liczba zawodników: ${Object.keys(p.zawodnicy || {}).length} | ${p.zablokowany ? '🔒 Zablokowany' : '🔓 Otwarty'}</div>
-        </div>`;
+		const isZakonczone = p.zakonczone === true;
+		const zakonczoneBadge = isZakonczone ? '<span class="medal-badge" style="background:#28a745; margin-left:8px;">✅ Zakończona</span>' : '';
+		html += `<div class="protocol-item ${lockedClass}" data-id="${p.id}">
+			<div class="protocol-title">${p.konkurencja || '?'} - ${p.kategoria || '?'} ${zakonczoneBadge}</div>
+			<div class="protocol-details">Liczba zawodników: ${Object.keys(p.zawodnicy || {}).length} | ${p.zablokowany ? '🔒 Zablokowany' : '🔓 Otwarty'}</div>
+		</div>`;
+        
     }
     container.innerHTML = html;
     document.querySelectorAll('.protocol-item').forEach(el => {
@@ -467,6 +471,52 @@ document.getElementById('addZawodnikBtn').addEventListener('click', () => {
     document.getElementById('zawodnikInfo').style.display = 'none';
     addMessage(`✅ Dodano zawodnika ${window.tempZawodnik.imie} ${window.tempZawodnik.nazwisko}`, 'success');
 });
+
+document.getElementById('endCompetitionBtn').addEventListener('click', async () => {
+    if (!currentProtocolId || !currentProtocol) {
+        addMessage('❌ Najpierw wybierz protokół', 'error');
+        return;
+    }
+    const konkurencja = currentProtocol.konkurencja;
+    const kategoria = currentProtocol.kategoria;
+    if (!konkurencja || !kategoria) {
+        addMessage('❌ Protokół nie ma ustawionej konkurencji lub kategorii', 'error');
+        return;
+    }
+
+    if (!confirm(`Czy na pewno chcesz zakończyć konkurencję: ${konkurencja} - ${kategoria}?\nWszystkie protokoły dla tej konkurencji i kategorii zostaną zablokowane i oznaczone jako zakończone.`)) return;
+
+    // Pobierz wszystkie protokoły techniczne
+    const snapshot = await database.ref('protokoly_techniczne').once('value');
+    const data = snapshot.val();
+    if (!data) return;
+
+    const updates = {};
+    for (const [id, protocol] of Object.entries(data)) {
+        if (protocol.konkurencja === konkurencja && protocol.kategoria === kategoria) {
+            updates[`${id}/zakonczone`] = true;
+            updates[`${id}/zablokowany`] = true; // opcjonalnie – blokada edycji
+            updates[`${id}/data_zakonczenia`] = Date.now();
+        }
+    }
+
+    if (Object.keys(updates).length === 0) {
+        addMessage('⚠️ Nie znaleziono innych protokołów dla tej konkurencji', 'warning');
+        return;
+    }
+
+    try {
+        await database.ref('protokoly_techniczne').update(updates);
+        addMessage(`✅ Zakończono konkurencję ${konkurencja} - ${kategoria} (zaktualizowano ${Object.keys(updates).length} protokołów)`, 'success');
+        // odśwież listę i bieżący edytor
+        await loadProtocolsList();
+        if (currentProtocolId) await loadProtocolForEdit(currentProtocolId);
+    } catch (err) {
+        addMessage(`❌ Błąd: ${err.message}`, 'error');
+    }
+});
+
+
 
 document.getElementById('saveProtocolBtn').addEventListener('click', async () => {
     if (!currentProtocolId) return;
