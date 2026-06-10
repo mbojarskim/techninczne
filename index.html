@@ -488,17 +488,25 @@ document.getElementById('saveProtocolBtn').addEventListener('click', async () =>
 document.getElementById('lockProtocolBtn').addEventListener('click', async () => {
     if (!currentProtocolId) return;
     currentProtocol.zablokowany = true;
-    await database.ref(`protokoly_techniczne/${currentProtocolId}`).update({ zablokowany: true });
+    currentProtocol.data_modyfikacji = Date.now();
+    await database.ref(`protokoly_techniczne/${currentProtocolId}`).update({
+        zablokowany: true,
+        data_modyfikacji: currentProtocol.data_modyfikacji
+    });
     updateLockButtons(true);
-    addMessage('🔒 Protokół zablokowany', 'success');
+    addMessage('🔒 Protokół zablokowany (zapisano datę modyfikacji)', 'success');
     loadProtocolsList();
 });
 document.getElementById('unlockProtocolBtn').addEventListener('click', async () => {
     if (!currentProtocolId) return;
     currentProtocol.zablokowany = false;
-    await database.ref(`protokoly_techniczne/${currentProtocolId}`).update({ zablokowany: false });
+    currentProtocol.data_modyfikacji = Date.now();
+    await database.ref(`protokoly_techniczne/${currentProtocolId}`).update({
+        zablokowany: false,
+        data_modyfikacji: currentProtocol.data_modyfikacji
+    });
     updateLockButtons(false);
-    addMessage('🔓 Protokół odblokowany', 'success');
+    addMessage('🔓 Protokół odblokowany (zapisano datę modyfikacji)', 'success');
     loadProtocolsList();
 });
 document.getElementById('closeEditorBtn').addEventListener('click', () => {
