@@ -122,6 +122,9 @@ let currentProtocolId = null, currentProtocol = null;
 let zawodnicyData = {};
 let unikalneKonkurencje = [];
 let unikalneKategorie = [];
+let autosaveTimer = null;
+let autosavePending = false;
+let lastSavedState = null;
 
 try {
     firebase.initializeApp(firebaseConfig);
@@ -228,6 +231,7 @@ async function loadProtocolForEdit(id) {
     if (!protocol) { addMessage('❌ Protokół nie istnieje', 'error'); return; }
     currentProtocolId = id;
     currentProtocol = protocol;
+	lastSavedState = JSON.stringify(protocol);
     if (currentProtocol.zawodnicy) {
         for (const nr in currentProtocol.zawodnicy) {
             const z = currentProtocol.zawodnicy[nr];
@@ -283,6 +287,96 @@ function updateLockButtons(isLocked) {
     renderAttemptsTable();
 }
 
+function scheduleAutosave() {
+    // Porównaj aktualny stan z ostatnim zapisanym (opcjonalnie)
+    const currentState = JSON.stringify(currentProtocol);
+    if (currentState === lastSavedState) {
+        // Nic się nie zmieniło – nie zapisujemy
+        return;
+    }
+    
+    // Resetuj poprzedni timer
+    if (autosaveTimer) {
+        clearTimeout(autosaveTimer);
+    }
+    
+    // Ustaw nowy timer – zapis po 5 sekundach bezczynności
+    autosaveTimer = setTimeout(() => {
+        performAutosave();
+    }, 5000);
+}
+
+async function performAutosave() {
+    if (!currentProtocolId || !currentProtocol) {
+        console.log('Autosave: brak protokołu do zapisu');
+        return;
+    }
+    
+    // Nie zapisuj, jeśli protokół jest zablokowany
+    if (currentProtocol.zablokowany) {
+        console.log('Autosave: protokół zablokowany – pomijam');
+        return;
+    }
+    
+    try {
+        // Przygotuj dane do zapisu (bez daty utworzenia, żeby nie nadpisać)
+        const dataToSave = {
+            konkurencja: currentProtocol.konkurencja,
+            kategoria: currentProtocol.kategoria,
+            zawodnicy: currentProtocol.zawodnicy,
+            zablokowany: currentProtocol.zablokowany,
+            data_modyfikacji: Date.now()
+        };
+        
+        await database.ref(`protokoly_techniczne/${currentProtocolId}`).update(dataToSave);
+        
+        // Zapamiętaj stan, aby nie zapisywać ponownie bez zmian
+        lastSavedState = JSON.stringify(currentProtocol);
+        
+        // Komunikat (opcjonalny)
+        showAutosaveInfo('💾 Autozapis wykonany');
+        console.log('✅ Autozapis protokołu:', currentProtocolId);
+    } catch (err) {
+        console.error('❌ Błąd autozapisu:', err);
+    }
+}
+
+// Opcjonalny komunikat o autozapisie
+let autosaveMessageTimeout = null;
+
+function showAutosaveInfo(msg) {
+    // Usuń poprzedni komunikat
+    const oldMsg = document.querySelector('.autosave-info');
+    if (oldMsg) oldMsg.remove();
+    if (autosaveMessageTimeout) {
+        clearTimeout(autosaveMessageTimeout);
+    }
+    
+    const div = document.createElement('div');
+    div.className = 'autosave-info';
+    div.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #28a745;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 40px;
+        font-size: 0.9rem;
+        z-index: 9999;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        transition: opacity 0.3s;
+    `;
+    div.innerText = msg;
+    document.body.appendChild(div);
+    
+    autosaveMessageTimeout = setTimeout(() => {
+        div.style.opacity = '0';
+        setTimeout(() => div.remove(), 300);
+    }, 3000);
+}
+
+
 function renderAttemptsTable() {
     const zawodnicy = currentProtocol.zawodnicy || {};
     const zawodnikList = Object.values(zawodnicy);
@@ -331,6 +425,7 @@ function renderAttemptsTable() {
                 zawodnik.najlepszy = best ? best.toString() : '';
                 const bestCell = document.querySelector(`.best-result[data-nr="${nr}"]`);
                 if (bestCell) bestCell.innerText = zawodnik.najlepszy;
+		scheduleAutosave();   // <-- DODAJ TUTAJ
             }
         };
         inp.addEventListener('change', handler);
@@ -341,7 +436,10 @@ function renderAttemptsTable() {
         const pkHandler = (e) => {
             const nr = chk.getAttribute('data-nr');
             const zawodnik = currentProtocol.zawodnicy[nr];
-            if (zawodnik) zawodnik.pk = chk.checked;
+            if (zawodnik) {
+		zawodnik.pk = chk.checked;
+		scheduleAutosave();
+		}
         };
         chk.addEventListener('change', pkHandler);
         chk._pkChange = pkHandler;
@@ -419,6 +517,7 @@ document.getElementById('createFromListBtn').addEventListener('click', async () 
     if (dodano > 0) {
         await database.ref(`protokoly_techniczne/${currentProtocolId}/zawodnicy`).set(currentProtocol.zawodnicy);
         renderAttemptsTable();
+	scheduleAutosave();
         addMessage(`✅ Dodano ${dodano} zawodników z listy startowej`, 'success');
     } else {
         addMessage(`ℹ️ Wszyscy pasujący (${pasujacy.length}) są już w protokole`, 'info');
@@ -467,6 +566,7 @@ document.getElementById('addZawodnikBtn').addEventListener('click', () => {
         pk: isPk
     };
     renderAttemptsTable();
+ scheduleAutosave();
     document.getElementById('editNrStartowy').value = '';
     document.getElementById('zawodnikInfo').style.display = 'none';
     addMessage(`✅ Dodano zawodnika ${window.tempZawodnik.imie} ${window.tempZawodnik.nazwisko}`, 'success');
