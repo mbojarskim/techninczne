@@ -232,6 +232,26 @@ async function loadProtocolForEdit(id) {
     currentProtocolId = id;
     currentProtocol = protocol;
 	lastSavedState = JSON.stringify(protocol);
+	// ========== NOWE OSTRZEŻENIE ==========
+    // Sprawdź, czy protokół jest oznaczony jako zakończony
+    if (protocol.zakonczone === true) {
+        // Wyświetl czerwoną informację w panelu protokołu
+        document.getElementById('protocolInfo').innerHTML = `
+            <div class="info-note" style="background:#f8d7da; border-left-color:#dc3545; color:#721c24;">
+                <strong>🔒 KONKURENCJA ZAKOŃCZONA!</strong><br>
+                Ta konkurencja (${protocol.konkurencja || '?'} - ${protocol.kategoria || '?'}) została już oficjalnie zakończona.<br>
+                Możesz przeglądać dane, ale nie możesz ich modyfikować.
+            </div>
+        `;
+        // Zablokuj edycję (opcjonalnie, ale zalecane)
+        updateLockButtons(true);
+        // Dodatkowo wyświetl komunikat w logach
+        addMessage('🔒 Ten protokół jest zakończony – edycja zablokowana', 'warning');
+    } else {
+        // Normalny widok (jeśli nie jest zakończony)
+        document.getElementById('protocolInfo').innerHTML = `<div class="info-note"><strong>${protocol.konkurencja || '?'} - ${protocol.kategoria || '?'}</strong> ${protocol.zablokowany ? '🔒 ZABLOKOWANY' : '🔓 OTWARTY'}</div>`;
+    }
+    // ========== KONIEC NOWEGO KODU ==========
     if (currentProtocol.zawodnicy) {
         for (const nr in currentProtocol.zawodnicy) {
             const z = currentProtocol.zawodnicy[nr];
@@ -457,6 +477,24 @@ document.getElementById('createFromListBtn').addEventListener('click', async () 
         addMessage('Wybierz konkurencję i kategorię', 'warning');
         return;
     }
+    
+    // SPRAWDZENIE: czy ta konkurencja została już zakończona (sprawdzamy wszystkie protokoły)
+    const snapshot = await database.ref('protokoly_techniczne').once('value');
+    const data = snapshot.val();
+    if (data) {
+        for (const [id, protocol] of Object.entries(data)) {
+            if (protocol.konkurencja === konkurencja && protocol.kategoria === kategoria && protocol.zakonczone === true) {
+                const confirmAdd = confirm(
+                    `⚠️ UWAGA!\nKonkurencja "${konkurencja}" - "${kategoria}" została już ZAKOŃCZONA.\n\nCzy na pewno chcesz dodać zawodników do zakończonej konkurencji?`
+                );
+                if (!confirmAdd) {
+                    addMessage('❌ Anulowano dodawanie zawodników', 'warning');
+                    return;
+                }
+                break;
+            }
+        }
+    }
 
     const pasujacy = [];
     for (const [id, z] of Object.entries(zawodnicyData)) {
@@ -491,6 +529,7 @@ document.getElementById('createFromListBtn').addEventListener('click', async () 
             kategoria: kategoria,
             zawodnicy: {},
             zablokowany: false,
+            zakonczone: false,
             data_utworzenia: Date.now(),
             utworzono_przez: currentUser.email
         };
@@ -517,7 +556,7 @@ document.getElementById('createFromListBtn').addEventListener('click', async () 
     if (dodano > 0) {
         await database.ref(`protokoly_techniczne/${currentProtocolId}/zawodnicy`).set(currentProtocol.zawodnicy);
         renderAttemptsTable();
-	scheduleAutosave();
+        scheduleAutosave();
         addMessage(`✅ Dodano ${dodano} zawodników z listy startowej`, 'success');
     } else {
         addMessage(`ℹ️ Wszyscy pasujący (${pasujacy.length}) są już w protokole`, 'info');
@@ -665,12 +704,37 @@ document.getElementById('closeEditorBtn').addEventListener('click', () => {
     currentProtocol = null;
 });
 document.getElementById('newProtocolBtn').addEventListener('click', async () => {
+    // Pobierz aktualnie wybrane wartości z selectów (jeśli są)
+    const konkurencja = document.getElementById('editKonkurencja').value.trim();
+    const kategoria = document.getElementById('editKategoria').value.trim();
+    
+    // Jeśli wybrano konkurencję i kategorię, sprawdź czy już jest zamknięta
+    if (konkurencja && kategoria) {
+        const snapshot = await database.ref('protokoly_techniczne').once('value');
+        const data = snapshot.val();
+        if (data) {
+            for (const [id, protocol] of Object.entries(data)) {
+                if (protocol.konkurencja === konkurencja && protocol.kategoria === kategoria && protocol.zakonczone === true) {
+                    const confirmCreate = confirm(
+                        `⚠️ UWAGA!\nKonkurencja "${konkurencja}" - "${kategoria}" została już ZAKOŃCZONA.\n\nCzy na pewno chcesz utworzyć nowy protokół dla zakończonej konkurencji?`
+                    );
+                    if (!confirmCreate) {
+                        addMessage('❌ Anulowano tworzenie nowego protokołu', 'warning');
+                        return;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    
     const newId = `tech_${Date.now()}`;
     const newProtocol = {
-        konkurencja: '',
-        kategoria: '',
+        konkurencja: konkurencja || '',
+        kategoria: kategoria || '',
         zawodnicy: {},
         zablokowany: false,
+        zakonczone: false,
         data_utworzenia: Date.now(),
         utworzono_przez: currentUser.email
     };
