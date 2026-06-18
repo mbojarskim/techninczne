@@ -83,10 +83,20 @@
                 <h3>✏️ Edycja protokołu</h3>
                 <div id="protocolInfo"></div>
                 <div class="form-row">
-                    <div class="form-group"><label>🏷️ Konkurencja</label><select id="editKonkurencja"></select></div>
-                    <div class="form-group"><label>🏷️ Kategoria</label><select id="editKategoria"></select></div>
-                    <div class="form-group"><label>&nbsp;</label><button id="createFromListBtn" class="info">📋 Utwórz z listy startowej</button></div>
-                </div>
+				<div class="form-group"><label>🏷️ Konkurencja</label><select id="editKonkurencja"></select></div>
+				<div class="form-group"><label>🏷️ Kategoria</label><select id="editKategoria"></select></div>
+				<!-- NOWE POLE: Liczba prób -->
+				<div class="form-group"><label>🔢 Liczba prób</label>
+					<select id="editLiczbaProb">
+						<option value="3" selected>3 próby</option>  <!-- <-- DODAJ selected -->
+						<option value="4">4 próby</option>
+						<option value="5">5 prób</option>
+						<option value="6">6 prób</option>
+					</select>
+				</div>
+				<div class="form-group"><label>&nbsp;</label><button id="createFromListBtn" class="info">📋 Utwórz z listy startowej</button></div>
+			</div>
+                   
                 <div class="form-row">
                     <div class="form-group"><label>🔢 Numer startowy (dodaj ręcznie)</label><input type="text" id="editNrStartowy" placeholder="np. 101"></div>
                     <div class="form-group"><label>&nbsp;</label><button id="loadZawodnikBtn" class="info">🔍 Pobierz dane</button></div>
@@ -229,10 +239,16 @@ async function loadProtocolForEdit(id) {
     const snap = await database.ref(`protokoly_techniczne/${id}`).once('value');
     const protocol = snap.val();
     if (!protocol) { addMessage('❌ Protokół nie istnieje', 'error'); return; }
+    
     currentProtocolId = id;
     currentProtocol = protocol;
-	lastSavedState = JSON.stringify(protocol);
-	// ========== NOWE OSTRZEŻENIE ==========
+    lastSavedState = JSON.stringify(protocol);
+    
+    // Ustaw liczbę prób w select
+    const liczbaProb = protocol.liczba_prob || 3;
+    document.getElementById('editLiczbaProb').value = liczbaProb;
+    
+    // ========== NOWE OSTRZEŻENIE ==========
     // Sprawdź, czy protokół jest oznaczony jako zakończony
     if (protocol.zakonczone === true) {
         // Wyświetl czerwoną informację w panelu protokołu
@@ -252,16 +268,20 @@ async function loadProtocolForEdit(id) {
         document.getElementById('protocolInfo').innerHTML = `<div class="info-note"><strong>${protocol.konkurencja || '?'} - ${protocol.kategoria || '?'}</strong> ${protocol.zablokowany ? '🔒 ZABLOKOWANY' : '🔓 OTWARTY'}</div>`;
     }
     // ========== KONIEC NOWEGO KODU ==========
+    
+    // Inicjalizacja zawodników z odpowiednią liczbą prób
     if (currentProtocol.zawodnicy) {
+        const liczbaProb = currentProtocol.liczba_prob || 3;
         for (const nr in currentProtocol.zawodnicy) {
             const z = currentProtocol.zawodnicy[nr];
-            if (!z.wyniki || !Array.isArray(z.wyniki) || z.wyniki.length !== 6) {
-                z.wyniki = ['', '', '', '', '', ''];
+            if (!z.wyniki || !Array.isArray(z.wyniki) || z.wyniki.length !== liczbaProb) {
+                z.wyniki = Array(liczbaProb).fill('');
             }
         }
     } else {
         currentProtocol.zawodnicy = {};
     }
+    
     document.getElementById('editKonkurencja').value = protocol.konkurencja || '';
     document.getElementById('editKategoria').value = protocol.kategoria || '';
     document.getElementById('editNrStartowy').value = '';
@@ -398,73 +418,90 @@ function showAutosaveInfo(msg) {
 
 
 function renderAttemptsTable() {
-    const zawodnicy = currentProtocol.zawodnicy || {};
-    const zawodnikList = Object.values(zawodnicy);
-    if (zawodnikList.length === 0) {
-        document.getElementById('attemptsContainer').innerHTML = '<div class="info-note">Brak zawodników. Dodaj z listy lub ręcznie.</div>';
-        return;
-    }
-    const isLocked = currentProtocol.zablokowany === true;
-    const disabledAttr = isLocked ? 'disabled' : '';
-    let html = `<div style="overflow-x:auto;"><table class="attempts-table"><thead><th>Nr startowy</th><th>Zawodnik</th><th>Kategoria</th><th>PK</th><th>Próba 1</th><th>Próba 2</th><th>Próba 3</th><th>Próba 4</th><th>Próba 5</th><th>Próba 6</th><th>Najlepszy</th></thead><tbody>`;
-    for (const z of zawodnikList) {
-        if (!z.wyniki || !Array.isArray(z.wyniki) || z.wyniki.length !== 6) {
-            z.wyniki = ['', '', '', '', '', ''];
-        }
-        const attempts = z.wyniki;
-        const best = z.najlepszy || '';
-        const isPk = z.pk || false;
-        html += `<tr data-nr="${z.nr_startowy}">
-            <td>${z.nr_startowy}</td>
-            <td>${z.imie} ${z.nazwisko}</td>
-            <td>${z.kategoria || ''}</td>
-            <td><input type="checkbox" class="pk-checkbox" data-nr="${z.nr_startowy}" ${isPk ? 'checked' : ''} ${disabledAttr}></td>`;
-        for (let i = 0; i < 6; i++) {
-            html += `<td><input type="text" class="attempt-input" data-nr="${z.nr_startowy}" data-proba="${i+1}" value="${attempts[i] || ''}" placeholder="wynik/x" style="width:70px;" ${disabledAttr}></td>`;
-        }
-        html += `<td class="best-result" data-nr="${z.nr_startowy}">${best}</td>`;
-        html += `</tr>`;
-    }
-    html += `</tbody></table></div>`;
-    document.getElementById('attemptsContainer').innerHTML = html;
-
-    if (isLocked) return;
-
-    document.querySelectorAll('.attempt-input').forEach(inp => {
-        inp.removeEventListener('change', window._attemptChange);
-        const handler = (e) => {
-            const nr = inp.getAttribute('data-nr');
-            const proba = parseInt(inp.getAttribute('data-proba'));
-            const value = inp.value.trim();
-            const zawodnik = currentProtocol.zawodnicy[nr];
-            if (zawodnik) {
-                if (!zawodnik.wyniki) zawodnik.wyniki = ['','','','','',''];
-                zawodnik.wyniki[proba-1] = (value === 'x') ? 'x' : value;
-                const liczby = zawodnik.wyniki.filter(v => v && v !== 'x' && !isNaN(parseFloat(v))).map(v => parseFloat(v));
-                const best = liczby.length ? Math.max(...liczby) : '';
-                zawodnik.najlepszy = best ? best.toString() : '';
-                const bestCell = document.querySelector(`.best-result[data-nr="${nr}"]`);
-                if (bestCell) bestCell.innerText = zawodnik.najlepszy;
-		scheduleAutosave();   // <-- DODAJ TUTAJ
-            }
-        };
-        inp.addEventListener('change', handler);
-        inp._attemptChange = handler;
-    });
-    document.querySelectorAll('.pk-checkbox').forEach(chk => {
-        chk.removeEventListener('change', window._pkChange);
-        const pkHandler = (e) => {
-            const nr = chk.getAttribute('data-nr');
-            const zawodnik = currentProtocol.zawodnicy[nr];
-            if (zawodnik) {
-		zawodnik.pk = chk.checked;
-		scheduleAutosave();
+		const zawodnicy = currentProtocol.zawodnicy || {};
+		const zawodnikList = Object.values(zawodnicy);
+		if (zawodnikList.length === 0) {
+			document.getElementById('attemptsContainer').innerHTML = '<div class="info-note">Brak zawodników. Dodaj z listy lub ręcznie.</div>';
+			return;
 		}
-        };
-        chk.addEventListener('change', pkHandler);
-        chk._pkChange = pkHandler;
-    });
-}
+		
+		const isLocked = currentProtocol.zablokowany === true;
+		const disabledAttr = isLocked ? 'disabled' : '';
+		const liczbaProb = currentProtocol.liczba_prob || 3;
+		
+		// Generuj nagłówki dla prób
+		let probHeaders = '';
+		for (let i = 1; i <= liczbaProb; i++) {
+			probHeaders += `<th>Próba ${i}</th>`;
+		}
+		
+		let html = `<div style="overflow-x:auto;"><table class="attempts-table"><thead><th>Nr startowy</th><th>Zawodnik</th><th>Kategoria</th><th>PK</th>${probHeaders}<th>Najlepszy</th></thead><tbody>`;
+		
+		for (const z of zawodnikList) {
+			if (!z.wyniki || !Array.isArray(z.wyniki) || z.wyniki.length !== liczbaProb) {
+				z.wyniki = Array(liczbaProb).fill('');
+			}
+			const attempts = z.wyniki;
+			const best = z.najlepszy || '';
+			const isPk = z.pk || false;
+			
+			html += `<tr data-nr="${z.nr_startowy}">
+				<td>${z.nr_startowy}</td>
+				<td>${z.imie} ${z.nazwisko}</td>
+				<td>${z.kategoria || ''}</td>
+				<td><input type="checkbox" class="pk-checkbox" data-nr="${z.nr_startowy}" ${isPk ? 'checked' : ''} ${disabledAttr}></td>`;
+			
+			// Generuj inputy dla każdej próby
+			for (let i = 0; i < liczbaProb; i++) {
+				html += `<td><input type="text" class="attempt-input" data-nr="${z.nr_startowy}" data-proba="${i+1}" value="${attempts[i] || ''}" placeholder="wynik/x" style="width:70px;" ${disabledAttr}></td>`;
+			}
+			
+			html += `<td class="best-result" data-nr="${z.nr_startowy}">${best}</td>`;
+			html += `</tr>`;
+		}
+		html += `</tbody></table></div>`;
+		document.getElementById('attemptsContainer').innerHTML = html;
+
+		if (isLocked) return;
+
+		// Event listenery dla inputów (to samo co wcześniej, ale działa dla dynamicznej liczby)
+		document.querySelectorAll('.attempt-input').forEach(inp => {
+			inp.removeEventListener('change', window._attemptChange);
+			const handler = (e) => {
+				const nr = inp.getAttribute('data-nr');
+				const proba = parseInt(inp.getAttribute('data-proba'));
+				const value = inp.value.trim();
+				const zawodnik = currentProtocol.zawodnicy[nr];
+				if (zawodnik) {
+					if (!zawodnik.wyniki) zawodnik.wyniki = Array(liczbaProb).fill('');
+					zawodnik.wyniki[proba-1] = (value === 'x') ? 'x' : value;
+					const liczby = zawodnik.wyniki.filter(v => v && v !== 'x' && !isNaN(parseFloat(v))).map(v => parseFloat(v));
+					const best = liczby.length ? Math.max(...liczby) : '';
+					zawodnik.najlepszy = best ? best.toString() : '';
+					const bestCell = document.querySelector(`.best-result[data-nr="${nr}"]`);
+					if (bestCell) bestCell.innerText = zawodnik.najlepszy;
+					scheduleAutosave();
+				}
+			};
+			inp.addEventListener('change', handler);
+			inp._attemptChange = handler;
+		});
+		
+		// Event listenery dla checkboxów PK (bez zmian)
+		document.querySelectorAll('.pk-checkbox').forEach(chk => {
+			chk.removeEventListener('change', window._pkChange);
+			const pkHandler = (e) => {
+				const nr = chk.getAttribute('data-nr');
+				const zawodnik = currentProtocol.zawodnicy[nr];
+				if (zawodnik) {
+					zawodnik.pk = chk.checked;
+					scheduleAutosave();
+				}
+			};
+			chk.addEventListener('change', pkHandler);
+			chk._pkChange = pkHandler;
+		});
+	}
 
 document.getElementById('createFromListBtn').addEventListener('click', async () => {
     if (currentProtocol && currentProtocol.zablokowany) {
@@ -473,6 +510,8 @@ document.getElementById('createFromListBtn').addEventListener('click', async () 
     }
     const konkurencja = document.getElementById('editKonkurencja').value.trim();
     const kategoria = document.getElementById('editKategoria').value.trim();
+    const liczbaProb = parseInt(document.getElementById('editLiczbaProb').value) || 3;
+    
     if (!konkurencja || !kategoria) {
         addMessage('Wybierz konkurencję i kategorię', 'warning');
         return;
@@ -497,31 +536,32 @@ document.getElementById('createFromListBtn').addEventListener('click', async () 
     }
 
     const pasujacy = [];
-for (const [id, z] of Object.entries(zawodnicyData)) {
-    if (z.rezygnacja === 'TRUE') continue;
-    // ===== NOWA LINIA: pomiń jeśli brak numeru startowego =====
-    if (!z.nr_startowy || z.nr_startowy.trim() === '') continue;
-    // =========================================================
-    const pelnaKat = (z.pelna_kategoria || z.kategoria_wiekowa || '').trim();
-    if (pelnaKat !== kategoria) continue;
-    const konk1 = (z.konkurencja1 || '').trim();
-    const konk2 = (z.konkurencja2 || '').trim();
-    const maKonkurencje = (konk1 === konkurencja || konk2 === konkurencja);
-    if (!maKonkurencje) continue;
+    for (const [id, z] of Object.entries(zawodnicyData)) {
+        if (z.rezygnacja === 'TRUE') continue;
+        // POMIŃ zawodników BEZ numeru startowego
+        if (!z.nr_startowy || z.nr_startowy.trim() === '') continue;
+        
+        const pelnaKat = (z.pelna_kategoria || z.kategoria_wiekowa || '').trim();
+        if (pelnaKat !== kategoria) continue;
+        const konk1 = (z.konkurencja1 || '').trim();
+        const konk2 = (z.konkurencja2 || '').trim();
+        const maKonkurencje = (konk1 === konkurencja || konk2 === konkurencja);
+        if (!maKonkurencje) continue;
 
-    pasujacy.push({
-        nr_startowy: z.nr_startowy,   // teraz na pewno istnieje
-        imie: z.imie,
-        nazwisko: z.nazwisko,
-        rocznik: z.rocznik,
-        kategoria: pelnaKat,
-        wyniki: ['', '', '', '', '', ''],
-        najlepszy: '',
-        pk: false
-    });
-}
+        pasujacy.push({
+            nr_startowy: z.nr_startowy,
+            imie: z.imie,
+            nazwisko: z.nazwisko,
+            rocznik: z.rocznik,
+            kategoria: pelnaKat,
+            wyniki: Array(liczbaProb).fill(''),
+            najlepszy: '',
+            pk: false
+        });
+    }
+    
     if (pasujacy.length === 0) {
-        addMessage('⚠️ Brak zawodników spełniających kryteria', 'warning');
+        addMessage('⚠️ Brak zawodników spełniających kryteria (z numerem startowym)', 'warning');
         return;
     }
 
@@ -530,6 +570,7 @@ for (const [id, z] of Object.entries(zawodnicyData)) {
         currentProtocol = {
             konkurencja: konkurencja,
             kategoria: kategoria,
+            liczba_prob: liczbaProb,
             zawodnicy: {},
             zablokowany: false,
             zakonczone: false,
@@ -542,9 +583,11 @@ for (const [id, z] of Object.entries(zawodnicyData)) {
         if (currentProtocol.konkurencja !== konkurencja || currentProtocol.kategoria !== kategoria) {
             currentProtocol.konkurencja = konkurencja;
             currentProtocol.kategoria = kategoria;
+            currentProtocol.liczba_prob = liczbaProb;
             await database.ref(`protokoly_techniczne/${currentProtocolId}`).update({
                 konkurencja: konkurencja,
-                kategoria: kategoria
+                kategoria: kategoria,
+                liczba_prob: liczbaProb
             });
         }
     }
@@ -597,18 +640,20 @@ document.getElementById('addZawodnikBtn').addEventListener('click', () => {
     if (currentProtocol.zawodnicy[nr]) { addMessage('Zawodnik już istnieje w protokole', 'warning'); return; }
     const pkCheck = document.getElementById('tempPkCheckbox');
     const isPk = pkCheck ? pkCheck.checked : false;
+    const liczbaProb = currentProtocol.liczba_prob || 3;
+    
     currentProtocol.zawodnicy[nr] = {
         nr_startowy: nr,
         imie: window.tempZawodnik.imie,
         nazwisko: window.tempZawodnik.nazwisko,
         rocznik: window.tempZawodnik.rocznik,
         kategoria: window.tempZawodnik.kategoria,
-        wyniki: ['','','','','',''],
+        wyniki: Array(liczbaProb).fill(''), // <-- dynamiczna liczba prób
         najlepszy: '',
         pk: isPk
     };
     renderAttemptsTable();
- scheduleAutosave();
+    scheduleAutosave();
     document.getElementById('editNrStartowy').value = '';
     document.getElementById('zawodnikInfo').style.display = 'none';
     addMessage(`✅ Dodano zawodnika ${window.tempZawodnik.imie} ${window.tempZawodnik.nazwisko}`, 'success');
@@ -668,10 +713,15 @@ document.getElementById('saveProtocolBtn').addEventListener('click', async () =>
     }
     const konkurencja = document.getElementById('editKonkurencja').value;
     const kategoria = document.getElementById('editKategoria').value;
+    const liczbaProb = parseInt(document.getElementById('editLiczbaProb').value) || 3;
+    
     if (!konkurencja || !kategoria) { addMessage('Uzupełnij konkurencję i kategorię', 'warning'); return; }
+    
     currentProtocol.konkurencja = konkurencja;
     currentProtocol.kategoria = kategoria;
+    currentProtocol.liczba_prob = liczbaProb; // <-- NOWE
     currentProtocol.data_modyfikacji = Date.now();
+    
     await database.ref(`protokoly_techniczne/${currentProtocolId}`).set(currentProtocol);
     addMessage('✅ Protokół zapisany', 'success');
     loadProtocolsList();
