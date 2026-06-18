@@ -497,26 +497,29 @@ document.getElementById('createFromListBtn').addEventListener('click', async () 
     }
 
     const pasujacy = [];
-    for (const [id, z] of Object.entries(zawodnicyData)) {
-        if (z.rezygnacja === 'TRUE') continue;
-        const pelnaKat = (z.pelna_kategoria || z.kategoria_wiekowa || '').trim();
-        if (pelnaKat !== kategoria) continue;
-        const konk1 = (z.konkurencja1 || '').trim();
-        const konk2 = (z.konkurencja2 || '').trim();
-        const maKonkurencje = (konk1 === konkurencja || konk2 === konkurencja);
-        if (!maKonkurencje) continue;
+for (const [id, z] of Object.entries(zawodnicyData)) {
+    if (z.rezygnacja === 'TRUE') continue;
+    // ===== NOWA LINIA: pomiń jeśli brak numeru startowego =====
+    if (!z.nr_startowy || z.nr_startowy.trim() === '') continue;
+    // =========================================================
+    const pelnaKat = (z.pelna_kategoria || z.kategoria_wiekowa || '').trim();
+    if (pelnaKat !== kategoria) continue;
+    const konk1 = (z.konkurencja1 || '').trim();
+    const konk2 = (z.konkurencja2 || '').trim();
+    const maKonkurencje = (konk1 === konkurencja || konk2 === konkurencja);
+    if (!maKonkurencje) continue;
 
-        pasujacy.push({
-            nr_startowy: z.nr_startowy || id,
-            imie: z.imie,
-            nazwisko: z.nazwisko,
-            rocznik: z.rocznik,
-            kategoria: pelnaKat,
-            wyniki: ['', '', '', '', '', ''],
-            najlepszy: '',
-            pk: false
-        });
-    }
+    pasujacy.push({
+        nr_startowy: z.nr_startowy,   // teraz na pewno istnieje
+        imie: z.imie,
+        nazwisko: z.nazwisko,
+        rocznik: z.rocznik,
+        kategoria: pelnaKat,
+        wyniki: ['', '', '', '', '', ''],
+        najlepszy: '',
+        pk: false
+    });
+}
     if (pasujacy.length === 0) {
         addMessage('⚠️ Brak zawodników spełniających kryteria', 'warning');
         return;
